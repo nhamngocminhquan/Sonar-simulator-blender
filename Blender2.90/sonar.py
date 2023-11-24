@@ -28,12 +28,12 @@ print(
 ###some important parameters here
 ## set the uplimit and lowlimit of the image i.e. sensing range
 # GLOBAL VARIABLES
-uplimit = 3.336  # 4.336
-lowlimit = 1.8  # 4.336
-resolution = 0.003
-imagewidth = int(1280)
-imageheight = int(560)
-scale = 1  # 10
+uplimit = 3.336                                 # Sonar range, upper limit
+lowlimit = 1.8                                  # Sonar range, lower limit
+resolution = 0.003                              # Range resolution
+imagewidth = int(1280)                          # Blender camera, width
+imageheight = int(560)                          # Blender camera, height
+scale = 1  # 10                                 # Only downscaling (number of beams)
 scaledimagewidth = int(imagewidth / scale)
 normalthres = 0.02
 max_integration = 3
@@ -218,6 +218,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
         return mat
 
     (r, g, b) = [fromstr(s) for s in exrimage.channels("RGB")]
+    cv.imwrite('testcolor.png', r * 255)
 
     ################################################################################
     # depth with exr
@@ -246,6 +247,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     arrd = np.array(rd)
     arrd = dist2depth_img(arrd)
+    cv.imwrite('testdepth.png', arrd / uplimit * 255)
 
     # arr2 = arrd / uplimit
     # cv.resizeWindow('test2',128,56)
@@ -269,19 +271,18 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     ######################################################################################
     # put img into array
-    arrc = np.array(r)
+    arrc = np.array(r)                              # Color (red)
+
     arrb = np.array(bn)
     arrg = np.array(gn)
     arrr = np.array(rn)
-
     arrrgb = np.dstack((arrb, arrg, arrr))
+    cv.imwrite('testnormal.png', arrrgb * 255)      # Normal (xyz)
     
     dmax = np.amax(arrd)
     dmin = np.amin(arrd)
     print("max distances:", dmax)
     print("min distances:", dmin)
-    length = int(np.floor((uplimit - lowlimit) / resolution))
-    print(length)
 
     #################################################################################################################################
     ##################################################################################
@@ -302,76 +303,54 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     ##here is the most important part, no research processed this part well, it is about how to add the intensities on the same arc
     ##change the mode to depth image generation or elevation angle image generation here
 
-    # arrraw=np.zeros(128*length,dtype=np.float32)
-    # arrraw=arrraw.reshape(length,128)
+    # Calculate length of sonar image (from lowlimit to uplimit, divided to resolutions)
+    length = int(np.floor((uplimit - lowlimit) / resolution))
+    print(length)
+
     arrraw = np.zeros((length, scaledimagewidth))
     ele = np.zeros((length, scaledimagewidth))
 
-    arrtensor = np.zeros((imageheight, length, scaledimagewidth))
-    count = np.zeros((length, scaledimagewidth))
+    count = np.zeros((length, scaledimagewidth), dtype=np.int32)
     container = np.zeros((length, scaledimagewidth), dtype=np.int32)
-    intensitymax = np.amax(rawc0)
-    intensitymin = np.amin(rawc0)
-    para = 1 / intensitymax
-    # print(rawc0)
-    # print(para)
-    # add intensity
-    # container=-1
-    print(scaledimagewidth)
-    print(imageheight)
-    for j in range(scaledimagewidth):
-        for i in range(imageheight):
-            dp0 = np.floor((rawd0[i, j] - lowlimit) / resolution)
-            dp = int(dp0)
-            ## maximum integration: 3 times
 
+    # Loop through colors + depth + normal images
+    for j in range(scaledimagewidth):               # Vertical slices
+        for i in range(imageheight):                # Range slices
+
+            # Conversion from measured depth to depth pixel (dp) on sonar image
+            dp = int(np.floor((rawd0[i, j] - lowlimit) / resolution))
             if dp >= length or dp <= 0:
                 continue
 
             ## for the hitted points on the same arc. if the normal vector is larger than a threshold, then integrate the intensities
             if (
-                arrraw[dp, j] > 0
+                arrraw[dp, j] > 0                                       # Only does this skip if arrraw is already larger than 0
                 and i + 1 < imageheight
-                and abs(arrrgb[container[dp, j], j, 0] - arrrgb[i, j, 0]) < normalthres
-                and abs(arrrgb[container[dp, j], j, 1] - arrrgb[i, j, 1]) < normalthres
-                and abs(arrrgb[container[dp, j], j, 2] - arrrgb[i, j, 2]) < normalthres
+                and abs(arrrgb[container[dp, j], j, 0] - arrrgb[i, j, 0]) < normalthres         # and current normal vector
+                and abs(arrrgb[container[dp, j], j, 1] - arrrgb[i, j, 1]) < normalthres         # is very close to previous
+                and abs(arrrgb[container[dp, j], j, 2] - arrrgb[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
             ):
                 # container=i
                 continue
-            ## maximum integration: 3 times
-            if count[dp, j] < 2:
+
+            ## maximum integration: 3 times #?
+            if count[dp, j] < 10:
                 # if i==container[dp,j]+1 or i==container[dp,j]+2:
                 #    continue
 
-                # if arrraw[dp,j]==0:
-                # arrraw[dp,j]=i
-                # arrraw[dp,j]=dp*math.sin((-14+i/560*28)/180*math.pi)+length/2    # change the intensity to depth
-                # if arrraw[dp,j]>0:
-                #    if rawc0[i,j]<0.005:
-                #        continue
-                arrtensor[i, dp, j] = 1
-                # add the intensity
-                # if arrraw[dp,j]==0:
-                # ele1[dp,j]=i
-                # else:
-                # ele2[dp,j]=i
-                ele[dp, j] = i
                 arrraw[dp, j] = rawc0[i, j] + arrraw[dp, j]
-                # arrraw[dp,j]=count[dp,j] #change the gray scale intensity to hit times
-                # arrraw[dp,j]=i # change the intensity to elevation angle
-                # arrraw[dp,j]=arrraw[dp,j]+1/(1+np.exp(-(rawc0[i,j])*para-0.5)*10)
-                # print(arrraw[dp,j])
-                # arrraw[dp,j]=rawc0[i,j]
+                ele[dp, j] = i
+                
                 count[dp, j] = count[dp, j] + 1
                 container[dp, j] = int(i)
-            # print(arrrgb[container[dp,j], j, 0])
+            # print(arrrgb[container[dp, j], j, 0])
 
     hit = np.zeros((length, scaledimagewidth))
 
     for i in range(int(length)):
         for j in range(scaledimagewidth):
             hit[i, j] = count[i, j]
-            if hit[i, j] == 4 or hit[i, j] == 3:
+            if hit[i, j] > 2:
                 hit[i, j] = 2
                 print("wtf")
             # if count[i,j]>1:
@@ -456,43 +435,44 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     savePath2 = os.path.join(save_directory, "fanshaped_" + str(num + 1) + "_" + str(k) + ".png")       # Sonar image, fan-shaped
     savePath3 = os.path.join(save_directory, "hit" + str(num + 1) + ".jpg")                             # Hits (if rays hit objects)
     savePath4 = os.path.join(save_directory, "hit_resize" + str(num + 1) + ".jpg")                      # Hits, resized
-    savePath5 = os.path.join(save_directory, "ele_" + str(num + 1) + "_" + str(k) + ".png")             # Elevation angle (probably for ML dataset generation)
-    savePath6 = os.path.join(save_directory, "ele_resize_" + str(num + 1) + "_" + str(k) + ".png")      # Elevation angle, resized
+    savePath5 = os.path.join(save_directory, "ele_" + str(num + 1) + "_" + str(k) + ".png")             # Elevation (probably for ML dataset generation)
+    savePath6 = os.path.join(save_directory, "ele_resize_" + str(num + 1) + "_" + str(k) + ".png")      # Elevation, resized
 
+    # Sonar
     raw = arrraw / 1.0 * 255
-    cv.imwrite(savePath, raw)  # np.amax(arrraw)  0.5 #0.7
-    print(np.amax(arrraw))
-    print(np.amax(hit))
-
-    hit_raw = hit / 2 * 255
-    cv.imwrite(savePath3, hit_raw)
-
-    ele_raw = ele / 560 * 255 #?
-    cv.imwrite(savePath5, ele_raw)
-
-    # rescale raw image
     rescale_raw = cv.resize(
         raw,
         dsize=(int(scaledimagewidth / 10), int(length)),
         interpolation=cv.INTER_CUBIC,
     )
+    cv.imwrite(savePath, raw)  # np.amax(arrraw)  0.5 #0.7
     cv.imwrite(savePath1, rescale_raw)
+    # print(np.amax(arrraw))
+    # print(np.amax(hit))
 
+    cv.imwrite(savePath2, fan / 1.0 * 255)  # 0.7
+
+    # Hits
+    hit_raw = hit / 2 * 255
     hit_rescale_raw = cv.resize(
         hit_raw,
         dsize=(int(scaledimagewidth / 10), int(length)),
         interpolation=cv.INTER_CUBIC,
     )
+    cv.imwrite(savePath3, hit_raw)
     cv.imwrite(savePath4, hit_rescale_raw)
 
-    ele1_rescale_raw = cv.resize(
+    # Elevation
+    ele_raw = ele / 560 * 255 #?
+    ele_rescale_raw = cv.resize(
         ele_raw,
         dsize=(int(scaledimagewidth / 10), int(length)),
         interpolation=cv.INTER_CUBIC,
     )
-    cv.imwrite(savePath6, ele1_rescale_raw)
+    cv.imwrite(savePath5, ele_raw)
+    cv.imwrite(savePath6, ele_rescale_raw)
 
-    cv.imwrite(savePath2, fan / 1.0 * 255)  # 0.7
+    return [arrraw, hit / 2, ele / 560, fan]
 
 
 def get_calibration_matrix_K_from_blender(camd):
@@ -568,13 +548,12 @@ for i in range(1):  # loop for generating images
     # print(get_calibration_matrix_K_from_blender(cam.data))
 
     # generate sonar image according to current camera perspective
-
     cam = bpy.data.objects["Camera"]
     print(get_calibration_matrix_K_from_blender(cam.data))
 
     bpy.context.scene.camera = bpy.context.scene.objects["Camera"]
     sceneRender()
-    imageGeneration(i, 0)
+    raw, hit_raw, ele_raw, fan = imageGeneration(i, 0)
     
     line = str(i) + "\n"
     f.write(line)
