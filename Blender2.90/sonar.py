@@ -15,7 +15,7 @@ import time
 from mathutils import Matrix
 from mathutils import Vector
 
-home_directory = "E:\\NYU\\ENGR\\ENGR-UH 4011\\Sonar-simulator-blender\\Blender2.90\\"
+home_directory = os.getcwd()
 save_directory = os.path.join(home_directory, "output")
 bpy.ops.wm.open_mainfile(
     filepath=os.path.join(home_directory, "acousticimagegeneration_z.blend")
@@ -218,19 +218,6 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
         return mat
 
     (r, g, b) = [fromstr(s) for s in exrimage.channels("RGB")]
-    img = r
-    arr = np.array(img)
-    # print(arr)
-    arr = arr / np.amax(arr)
-    # cv.resizeWindow('test',128,56)
-    # cv.imshow('testgrayscale', arr)
-    rr = np.array(r)
-    gg = np.array(g)
-    bb = np.array(b)
-    rgb = np.zeros([height, width, 3], dtype=np.float32)
-    rgb[:, :, 0] = bb
-    rgb[:, :, 1] = gg
-    rgb[:, :, 2] = rr
 
     ################################################################################
     # depth with exr
@@ -257,15 +244,10 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
         return depth
 
-    img2 = rd
-    arrd = np.array(img2)
-    # print(img2)
-    arr2 = np.array(img2)
-
+    arrd = np.array(rd)
     arrd = dist2depth_img(arrd)
-    arr2 = dist2depth_img(arr2)
 
-    arr2 = arr2 / uplimit
+    # arr2 = arrd / uplimit
     # cv.resizeWindow('test2',128,56)
     # cv.imshow('testdepth', arr2)
     ##test
@@ -281,45 +263,24 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     (rn, gn, bn) = [fromstr(s) for s in exrimage.channels("RGB")]
 
-    imgrgb = np.zeros([height, width, 3], dtype=np.float32)
-
-    img3 = bn
-    arr3 = np.array(img3)
-    arr3 = arr3 / np.max(arr3)
-    img4 = gn
-    arr4 = np.array(img4)
-    arr4 = arr4 / np.max(arr4)
-    img5 = rn
-    arr5 = np.array(img5)
-    arr5 = arr5 / np.max(arr5)
-    imgrgb[:, :, 0] = arr3
-    imgrgb[:, :, 1] = arr4
-    imgrgb[:, :, 2] = arr5
-    # cv.imshow('testrgb', arr3)
-
     print("image read")
     print("width", width)
     print("height", height)
 
     ######################################################################################
     # put img into array
-    arrc = np.array(img)
+    arrc = np.array(r)
+    arrb = np.array(bn)
+    arrg = np.array(gn)
+    arrr = np.array(rn)
 
-    arrb = np.array(img3)
-    arrg = np.array(img4)
-    arrr = np.array(img5)
-    arrrgb = np.zeros([height, width, 3], dtype=np.float32)
-    arrrgb[:, :, 0] = arrb
-    arrrgb[:, :, 1] = arrg
-    arrrgb[:, :, 2] = arrr
-    # print(len(rd))
-    # print(arrd)
+    arrrgb = np.dstack((arrb, arrg, arrr))
+    
     dmax = np.amax(arrd)
     dmin = np.amin(arrd)
     print("max distances:", dmax)
     print("min distances:", dmin)
-    length = np.floor((uplimit - lowlimit) / resolution)
-    length = int(length)
+    length = int(np.floor((uplimit - lowlimit) / resolution))
     print(length)
 
     #################################################################################################################################
@@ -327,10 +288,8 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     # resize image will lead to some sample problem, for high resolution image, this part is not needed
     # this part is difficult, to be improved
     print("resize image")
-    rawd0 = np.zeros((imageheight * imagewidth))
-    rawd0 = rawd0.reshape(imageheight, imagewidth)
-    rawc0 = np.zeros((imageheight * imagewidth))
-    rawc0 = rawc0.reshape(imageheight, imagewidth)
+    rawd0 = np.zeros((imageheight, imagewidth))
+    rawc0 = np.zeros((imageheight, imagewidth))
     for i in range(imageheight):
         for j in range(scaledimagewidth):
             j0 = j * scale
@@ -349,7 +308,6 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     ele = np.zeros((length, scaledimagewidth))
 
     arrtensor = np.zeros((imageheight, length, scaledimagewidth))
-    rawd1 = rawd0
     count = np.zeros((length, scaledimagewidth))
     container = np.zeros((length, scaledimagewidth), dtype=np.int32)
     intensitymax = np.amax(rawc0)
@@ -468,7 +426,6 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     xcenter = 0
     ycenter = int(length2)
     degrees = 16
-    halfwidth2 = int(width2 / 2)
     fan1 = np.zeros((length3, width2))
     for i in range(length3):
         for j in range(width2):
@@ -503,15 +460,18 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     savePath5 = os.path.join(save_directory, "ele_" + str(num + 1) + "_" + str(k) + ".png")             # Elevation angle (probably for ML dataset generation)
     savePath6 = os.path.join(save_directory, "ele_resize_" + str(num + 1) + "_" + str(k) + ".png")      # Elevation angle, resized
 
-    cv.imwrite(savePath, arrraw / 1.0 * 255)  # np.amax(arrraw)  0.5 #0.7
+    raw = arrraw / 1.0 * 255
+    cv.imwrite(savePath, raw)  # np.amax(arrraw)  0.5 #0.7
     print(np.amax(arrraw))
     print(np.amax(hit))
-    cv.imwrite(savePath3, hit / 2 * 255)
 
-    cv.imwrite(savePath5, ele / 560 * 255)
+    hit_raw = hit / 2 * 255
+    cv.imwrite(savePath3, hit_raw)
+
+    ele1_raw = ele / 560 * 255
+    cv.imwrite(savePath5, ele1_raw)
 
     # rescale raw image
-    raw = cv.imread(savePath, 0)
     rescale_raw = cv.resize(
         raw,
         dsize=(int(scaledimagewidth / 10), int(length)),
@@ -519,7 +479,6 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     )
     cv.imwrite(savePath1, rescale_raw)
 
-    hit_raw = cv.imread(savePath3, 0)
     hit_rescale_raw = cv.resize(
         hit_raw,
         dsize=(int(scaledimagewidth / 10), int(length)),
@@ -527,16 +486,12 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     )
     cv.imwrite(savePath4, hit_rescale_raw)
 
-    ele1_raw = cv.imread(savePath5, 0)
     ele1_rescale_raw = cv.resize(
         ele1_raw,
         dsize=(int(scaledimagewidth / 10), int(length)),
         interpolation=cv.INTER_CUBIC,
     )
     cv.imwrite(savePath6, ele1_rescale_raw)
-
-    # path = os.path.join(home_directory, "acoustic_if_"+str(num+1)+"_"+str(k)+".png")
-    # cv.imwrite(path, rgb/1.0*255) #0.7
 
     cv.imwrite(savePath2, fan1 / 1.0 * 255)  # 0.7
 
@@ -585,7 +540,6 @@ def move(camera):
     camera.location.x = camera.location.x - 0.1
 
 np.random.seed(0)
-flag = 0
 motion_file = "motion.txt"
 f = open(os.path.join(save_directory, motion_file), mode="w")
 
@@ -603,9 +557,6 @@ for i in range(1):  # loop for generating images
     camera.rotation_euler[0] = 51 / 180 * 3.14159  # 51
     camera.rotation_euler[1] = 0
     camera.rotation_euler[2] = 90 / 180 * 3.14159
-
-    camera.location.x = 0.8 - np.random.rand() * 2.0
-    camera.location.y = 0 + (np.random.rand() * 2 - 1) * 4.0
 
     spot_light = bpy.data.objects["Spot.000"]
     spot_light.data.energy = 1.0
