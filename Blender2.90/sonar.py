@@ -228,7 +228,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     (rd, gd, bd) = [fromstr(s) for s in exrimage.channels("RGB")]
 
-    def dist2depth_img(rd, focal=2280.4170):
+    def dist2depth_img(rd, focal=2280.4170): #?
         img_width = rd.shape[1]
         img_height = rd.shape[0]
 
@@ -366,8 +366,6 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
                 container[dp, j] = int(i)
             # print(arrrgb[container[dp,j], j, 0])
 
-    # writePath = "D:\\elevate-estimation\\rec-ele\\rec"+str(num+1)+".txt"
-
     hit = np.zeros((length, scaledimagewidth))
 
     for i in range(int(length)):
@@ -393,7 +391,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     # arrraw[i,j]=arrraw[i,j]
     # ========================================================
     # To generate fan-shaped image
-    width = int(uplimit / resolution * np.sin(32 / 180 * math.pi))
+    width = int(uplimit / resolution * np.sin(32 / 180 * math.pi)) #?
     print("width=", width)
     length2 = int(uplimit / resolution)
     print("length2=", length2)
@@ -420,13 +418,13 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     #######################################################
     # rotate fanshaped image
 
-    width2 = int(length2 * math.cos(74 / 180 * math.pi) * 2)
+    width2 = int(length2 * math.cos(74 / 180 * math.pi) * 2) #?
     offset = int(length2 - length2 * math.sin(74 / 180 * math.pi))
     length3 = int(length2 + offset)
     xcenter = 0
     ycenter = int(length2)
-    degrees = 16
-    fan1 = np.zeros((length3, width2))
+    degrees = 16 #?
+    fan = np.zeros((length3, width2))
     for i in range(length3):
         for j in range(width2):
             px = int(
@@ -442,12 +440,13 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
             if px < 0 or px > width - 1 or py > length2 - 1 or py < 0:
                 continue
             if i - offset > 0:
-                fan1[i - offset, j] = raw2fan0[py, px]
+                fan[i - offset, j] = raw2fan0[py, px]
 
     # delete white edge
-    fan1 = fan1[0 : length2 - 1, :]
-    fan1 = cv.flip(fan1, 0)
-    fan1 = cv.flip(fan1, 1)
+    fan = fan[0 : length2 - 1, :]
+    fan = cv.flip(fan, 0)
+    fan = cv.flip(fan, 1)
+
     #################################################################################################################################
     # raw image
     # cv.imshow('rawsonar',arrraw/np.amax(arrraw))
@@ -468,8 +467,8 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     hit_raw = hit / 2 * 255
     cv.imwrite(savePath3, hit_raw)
 
-    ele1_raw = ele / 560 * 255
-    cv.imwrite(savePath5, ele1_raw)
+    ele_raw = ele / 560 * 255 #?
+    cv.imwrite(savePath5, ele_raw)
 
     # rescale raw image
     rescale_raw = cv.resize(
@@ -487,13 +486,13 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     cv.imwrite(savePath4, hit_rescale_raw)
 
     ele1_rescale_raw = cv.resize(
-        ele1_raw,
+        ele_raw,
         dsize=(int(scaledimagewidth / 10), int(length)),
         interpolation=cv.INTER_CUBIC,
     )
     cv.imwrite(savePath6, ele1_rescale_raw)
 
-    cv.imwrite(savePath2, fan1 / 1.0 * 255)  # 0.7
+    cv.imwrite(savePath2, fan / 1.0 * 255)  # 0.7
 
 
 def get_calibration_matrix_K_from_blender(camd):
