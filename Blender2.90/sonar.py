@@ -495,23 +495,13 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     # raw image
     # cv.imshow('rawsonar',arrraw/np.amax(arrraw))
     # save raw and resized sonar images
-    savePath = os.path.join(
-        save_directory, "rawimg_" + str(num + 1) + "_" + str(k) + ".png"
-    )
-    savePath1 = os.path.join(
-        save_directory, "resizeimg_" + str(num + 1) + "_" + str(k) + ".png"
-    )
-    savePath2 = os.path.join(
-        save_directory, "fanshaped_" + str(num + 1) + "_" + str(k) + ".png"
-    )
-    savePath3 = os.path.join(save_directory, "hit" + str(num + 1) + ".jpg")
-    savePath4 = os.path.join(save_directory, "hit_resize" + str(num + 1) + ".jpg")
-    savePath5 = os.path.join(
-        save_directory, "ele_" + str(num + 1) + "_" + str(k) + ".png"
-    )
-    savePath6 = os.path.join(
-        save_directory, "ele_resize_" + str(num + 1) + "_" + str(k) + ".png"
-    )
+    savePath = os.path.join(save_directory, "rawimg_" + str(num + 1) + "_" + str(k) + ".png")           # Sonar image
+    savePath1 = os.path.join(save_directory, "resizeimg_" + str(num + 1) + "_" + str(k) + ".png")       # Sonar image, resized
+    savePath2 = os.path.join(save_directory, "fanshaped_" + str(num + 1) + "_" + str(k) + ".png")       # Sonar image, fan-shaped
+    savePath3 = os.path.join(save_directory, "hit" + str(num + 1) + ".jpg")                             # Hits (if rays hit objects)
+    savePath4 = os.path.join(save_directory, "hit_resize" + str(num + 1) + ".jpg")                      # Hits, resized
+    savePath5 = os.path.join(save_directory, "ele_" + str(num + 1) + "_" + str(k) + ".png")             # Elevation angle (probably for ML dataset generation)
+    savePath6 = os.path.join(save_directory, "ele_resize_" + str(num + 1) + "_" + str(k) + ".png")      # Elevation angle, resized
 
     cv.imwrite(savePath, arrraw / 1.0 * 255)  # np.amax(arrraw)  0.5 #0.7
     print(np.amax(arrraw))
@@ -545,42 +535,12 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     )
     cv.imwrite(savePath6, ele1_rescale_raw)
 
-    # path = "E:\\a2fnet-self\\sim-sequence-x\\0\\front"+str(num+1)+".png"
-    # cv.imwrite(path, 1.0/arrd*255)
-
     # path = os.path.join(home_directory, "acoustic_if_"+str(num+1)+"_"+str(k)+".png")
     # cv.imwrite(path, rgb/1.0*255) #0.7
 
-    # path = "D:\\self-a2fnet\\jde-ac\\sfront"+str(num+1)+".txt"
-    # np.savetxt(path,1.0/arrd)
-
-    # path = "D:\\self-a2fnet\\color_test\\sif"+str(num+1)+".txt"
-    # np.savetxt(path,arrc)
     cv.imwrite(savePath2, fan1 / 1.0 * 255)  # 0.7
 
 
-##delete fan-shaped image generation
-##Check it in watertanksimulation_1212.blend
-
-# camera = bpy.data.objects['Camera']
-# camera.rotation_euler[0] = 35 / 180 * math.pi
-# camera.rotation_euler[1] = 0
-# camera.rotation_euler[2] = 90 / 180 * math.pi
-##======================
-# camera.location.x = 3.8
-# camera.location.y = 3.3
-# camera.rotation_euler[2] = 3.14159/2.0
-
-
-# camera = bpy.context.active_object
-# bpy.ops.transform.rotate(value=0.005*math.pi, orient_axis='Z')
-# outpath = "C:\\Users\\liu_d\\AppData\\Roaming\\Blender Foundation\\Blender\\2.80\\config\\BlenderPython\\test\\"
-
-
-# path2label = "D:\\BlenderPython\\rec-ele\\label.txt"
-
-
-# f = open(path2label,'w')
 def get_calibration_matrix_K_from_blender(camd):
     f_in_mm = camd.lens
     scene = bpy.context.scene
@@ -613,21 +573,6 @@ def get_calibration_matrix_K_from_blender(camd):
     return K
 
 
-camera = bpy.data.objects["Camera"]
-# target = bpy.data.objects['Plane']
-camera.location.x = 0.8  # 2.3
-camera.location.y = 0.0
-camera.location.z = 1.0  # 2.1
-
-camera.rotation_euler[0] = 65 / 180 * 3.14159  # 51
-camera.rotation_euler[1] = 0
-camera.rotation_euler[2] = 90 / 180 * 3.14159
-
-
-area_light = bpy.data.objects["Area"]
-area_light.data.energy = 0.0
-
-
 def clockwise(camera):
     camera.rotation_euler[2] = camera.rotation_euler[2] + 3 / 180 * 3.14159
 
@@ -639,13 +584,16 @@ def unclockwise(camera):
 def move(camera):
     camera.location.x = camera.location.x - 0.1
 
-
 np.random.seed(0)
 flag = 0
 motion_file = "motion.txt"
 f = open(os.path.join(save_directory, motion_file), mode="w")
 
-for i in range(10):  # loop for generating images
+camera = bpy.data.objects["Camera"]
+area_light = bpy.data.objects["Area"]
+area_light.data.energy = 0.0
+
+for i in range(1):  # loop for generating images
     print("start!!!!!!!!!!!!!!!!!!!!!!!")
 
     camera.location.x = 0.8  # 2.3
@@ -677,24 +625,8 @@ for i in range(10):  # loop for generating images
     bpy.context.scene.camera = bpy.context.scene.objects["Camera"]
     sceneRender()
     imageGeneration(i, 0)
-    # camera.rotation_euler[0] += 0.1/180 * math.pi
-
-    mot1 = (np.random.rand() + 1) * 0.05
-    mot2 = (np.random.rand() + 1) * 0.05
-
-    camera.location.x = camera.location.x - mot1
-    # camera.location.x = camera.location.x -0.1/np.cos(39.0/180.0*math.pi)
-    # camera.location.z = camera.location.z +0.1*np.tan(39.0/180.0*math.pi)
-    # camera.location.x = camera.location.x -0.1
-    # cam.rotation_euler.rotate_axis('Z',5.0/180.0*math.pi)
-    sceneRender()
-    imageGeneration(i, 1)
-
-    camera.location.x = camera.location.x - mot2
-    # cam.rotation_euler.rotate_axis('Z',5.0/180.0*math.pi)
-    sceneRender()
-    imageGeneration(i, 2)
-    line = str(mot1) + " " + str(mot2) + "\n"
+    
+    line = str(i) + "\n"
     f.write(line)
 
 
