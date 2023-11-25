@@ -31,8 +31,9 @@ print(
 uplimit = 3.336                                 # Sonar range, upper limit
 lowlimit = 1.8                                  # Sonar range, lower limit
 resolution = 0.003                              # Range resolution
-imagewidth = int(1280)                          # Blender camera, width
-imageheight = int(560)                          # Blender camera, height
+imagewidth = 0                                  # Blender camera, width (set below)
+imageheight = 0                                 # Blender camera, height (set below)
+focal_length = 0                                # Blender camera, focal length (set below)
 scale = 1  # 10                                 # Only downscaling (number of beams)
 scaledimagewidth = int(imagewidth / scale)
 normalthres = 0.02
@@ -229,7 +230,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     (rd, gd, bd) = [fromstr(s) for s in exrimage.channels("RGB")]
 
-    def dist2depth_img(rd, focal=2280.4170): #?
+    def dist2depth_img(rd, focal=focal_length):
         img_width = rd.shape[1]
         img_height = rd.shape[0]
 
@@ -263,7 +264,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     dw = exrimage.header()["dataWindow"]
     (width, height) = (dw.max.x - dw.min.x + 1, dw.max.y - dw.min.y + 1)
 
-    (rn, gn, bn) = [fromstr(s) for s in exrimage.channels("RGB")]
+    (xn, yn, zn) = [fromstr(s) for s in exrimage.channels("RGB")]
 
     print("image read")
     print("width", width)
@@ -273,11 +274,11 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     # put img into array
     arrc = np.array(r)                              # Color (red)
 
-    arrb = np.array(bn)
-    arrg = np.array(gn)
-    arrr = np.array(rn)
-    arrrgb = np.dstack((arrb, arrg, arrr))
-    cv.imwrite('testnormal.png', arrrgb * 255)      # Normal (xyz)
+    arrx = np.array(xn)
+    arry = np.array(yn)
+    arrz = np.array(zn)
+    arrxyz = np.dstack((arrx, arry, arrz))
+    cv.imwrite('testnormal.png', arrxyz * 255)      # Normal (xyz)
     
     dmax = np.amax(arrd)
     dmin = np.amin(arrd)
@@ -323,18 +324,22 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
                 continue
 
             ## for the hitted points on the same arc. if the normal vector is larger than a threshold, then integrate the intensities
+            # This is so that multiple pixels on depth image don't end up contributing to the same pixel on sonar image
             if (
                 arrraw[dp, j] > 0                                       # Only does this skip if arrraw is already larger than 0
                 and i + 1 < imageheight
-                and abs(arrrgb[container[dp, j], j, 0] - arrrgb[i, j, 0]) < normalthres         # and current normal vector
-                and abs(arrrgb[container[dp, j], j, 1] - arrrgb[i, j, 1]) < normalthres         # is very close to previous
-                and abs(arrrgb[container[dp, j], j, 2] - arrrgb[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
+                # This is unreliable for different angles
+                # and abs(i - container[dp, j]) < 4
+                and abs(arrxyz[container[dp, j], j, 0] - arrxyz[i, j, 0]) < normalthres         # and current normal vector
+                and abs(arrxyz[container[dp, j], j, 1] - arrxyz[i, j, 1]) < normalthres         # is very close to previous
+                and abs(arrxyz[container[dp, j], j, 2] - arrxyz[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
             ):
                 # container=i
                 continue
 
             ## maximum integration: 3 times #?
-            if count[dp, j] < 10:
+            if count[dp, j] < 2:
+                # This is unreliable for different angles
                 # if i==container[dp,j]+1 or i==container[dp,j]+2:
                 #    continue
 
@@ -549,7 +554,12 @@ for i in range(1):  # loop for generating images
 
     # generate sonar image according to current camera perspective
     cam = bpy.data.objects["Camera"]
-    print(get_calibration_matrix_K_from_blender(cam.data))
+    K = get_calibration_matrix_K_from_blender(cam.data)
+    print(K)
+    imagewidth = int(K[0][2] * 2)
+    imageheight = int(K[1][2] * 2)
+    focal_length = K[0][0]
+    scaledimagewidth = int(imagewidth * 1.0 / scale)
 
     bpy.context.scene.camera = bpy.context.scene.objects["Camera"]
     sceneRender()
