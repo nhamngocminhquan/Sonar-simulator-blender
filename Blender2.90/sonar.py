@@ -314,52 +314,63 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     count = np.zeros((length, scaledimagewidth), dtype=np.int32)
     container = np.zeros((length, scaledimagewidth), dtype=np.int32)
+    depth_pixels = np.floor((rawd0 - lowlimit) / resolution).astype(int)
+    depth_pixels_diff = np.diff(depth_pixels, axis=0, prepend=0)
     current_depth = np.zeros(scaledimagewidth, dtype=np.int32)
 
+
     # Loop through colors + depth + normal images
-    for j in range(scaledimagewidth):               # Vertical slices
-        for i in range(imageheight):                # Range slices
+    mask = np.argwhere(
+        (depth_pixels > 0) & (depth_pixels < length) &
+        ((depth_pixels_diff != 0) | (arrxyz_diff > normalthres))
+    )
+    # print(mask)
+    for i in mask:
+        # print(i[1])
+        arrraw[depth_pixels[tuple(i)], i[1]] += rawc0[tuple(i)]
 
-            # Conversion from measured depth to depth pixel (dp) on sonar image
-            dp = int(np.floor((rawd0[i, j] - lowlimit) / resolution))
-            if dp >= length or dp <= 0:
-                continue
+    # for j in range(scaledimagewidth):               # Vertical slices
+    #     for i in range(imageheight):                # Range slices
 
-            ## for the hitted points on the same arc. if the normal vector is larger than a threshold, then integrate the intensities
-            # This is so that multiple pixels on depth image don't end up contributing to the same pixel on sonar image
-            if (
-                dp == current_depth[j]                               # Implying still in neighborhood of previous point
-                # This is unreliable for different angles
-                # and abs(i - container[dp, j]) < 4
-                and arrxyz_diff[i, j] < normalthres
+    #         # Conversion from measured depth to depth pixel (dp) on sonar image
+    #         dp = int(np.floor((rawd0[i, j] - lowlimit) / resolution))
+    #         if dp >= length or dp <= 0:
+    #             continue
+
+    #         ## for the hitted points on the same arc. if the normal vector is larger than a threshold, then integrate the intensities
+    #         # This is so that multiple pixels on depth image don't end up contributing to the same pixel on sonar image
+    #         if (
+    #             dp == current_depth[j]                               # Implying still in neighborhood of previous point
+    #             # This is unreliable for different angles
+    #             # and abs(i - container[dp, j]) < 4
+    #             and arrxyz_diff[i, j] < normalthres
                 
-                # This is too slow
-                # arrraw[dp, j] > 0                                       # Only does this skip if arrraw is already larger than 0
-                # and i + 1 < imageheight
-                # and abs(arrxyz[container[dp, j], j, 0] - arrxyz[i, j, 0]) < normalthres         # and current normal vector
-                # and abs(arrxyz[container[dp, j], j, 1] - arrxyz[i, j, 1]) < normalthres         # is very close to previous
-                # and abs(arrxyz[container[dp, j], j, 2] - arrxyz[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
-            ):
-                # container=i
-                continue
+    #             # This is too slow
+    #             # arrraw[dp, j] > 0                                       # Only does this skip if arrraw is already larger than 0
+    #             # and i + 1 < imageheight
+    #             # and abs(arrxyz[container[dp, j], j, 0] - arrxyz[i, j, 0]) < normalthres         # and current normal vector
+    #             # and abs(arrxyz[container[dp, j], j, 1] - arrxyz[i, j, 1]) < normalthres         # is very close to previous
+    #             # and abs(arrxyz[container[dp, j], j, 2] - arrxyz[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
+    #         ):
+    #             # container=i
+    #             continue
 
-            ## maximum integration: 3 times #?      
-            # if count[dp, j] < 10:                                     # No maximum integration
-            if True:
-                # This is unreliable for different angles
-                # if i==container[dp,j]+1 or i==container[dp,j]+2:
-                #    continue
+    #         ## maximum integration: 3 times #?      
+    #         # if count[dp, j] < 10:                                     # No maximum integration
+    #         if True:
+    #             # This is unreliable for different angles
+    #             # if i==container[dp,j]+1 or i==container[dp,j]+2:
+    #             #    continue
 
-                arrraw[dp, j] = rawc0[i, j] + arrraw[dp, j]
-                ele[dp, j] = i
+    #             # arrraw[dp, j] = rawc0[i, j] + arrraw[dp, j]
+    #             ele[dp, j] = i
                 
-                count[dp, j] = count[dp, j] + 1
-                container[dp, j] = int(i)
+    #             count[dp, j] = count[dp, j] + 1
+    #             container[dp, j] = int(i)
 
-            if dp != current_depth[j]:
-                current_depth[j] = dp
-            # print(arrrgb[container[dp, j], j, 0])
-    
+    #         if dp != current_depth[j]:
+    #             current_depth[j] = dp
+
     # prob = 0.01
     # rnd = np.random.rand(length, scaledimagewidth)
     # arrraw[rnd < prob] = np.min(arrraw)
