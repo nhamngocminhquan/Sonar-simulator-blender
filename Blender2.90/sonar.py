@@ -266,10 +266,6 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     (xn, yn, zn) = [fromstr(s) for s in exrimage.channels("RGB")]
 
-    print("image read")
-    print("width", width)
-    print("height", height)
-
     ######################################################################################
     # put img into array
     arrc = np.array(r)                              # Color (red)
@@ -279,6 +275,11 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     arrz = np.array(zn)
     arrxyz = np.dstack((arrx, arry, arrz))
     cv.imwrite('testnormal.png', arrxyz * 255)      # Normal (xyz)
+    arrxyz_diff = (
+        np.abs(np.diff(arrx, axis=0, prepend=0)) +
+        np.abs(np.diff(arry, axis=0, prepend=0)) +
+        np.abs(np.diff(arrz, axis=0, prepend=0))
+    )
     
     dmax = np.amax(arrd)
     dmin = np.amin(arrd)
@@ -313,6 +314,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     count = np.zeros((length, scaledimagewidth), dtype=np.int32)
     container = np.zeros((length, scaledimagewidth), dtype=np.int32)
+    current_depth = np.zeros(scaledimagewidth, dtype=np.int32)
 
     # Loop through colors + depth + normal images
     for j in range(scaledimagewidth):               # Vertical slices
@@ -326,19 +328,24 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
             ## for the hitted points on the same arc. if the normal vector is larger than a threshold, then integrate the intensities
             # This is so that multiple pixels on depth image don't end up contributing to the same pixel on sonar image
             if (
-                arrraw[dp, j] > 0                                       # Only does this skip if arrraw is already larger than 0
-                and i + 1 < imageheight
+                dp == current_depth[j]                               # Implying still in neighborhood of previous point
                 # This is unreliable for different angles
                 # and abs(i - container[dp, j]) < 4
-                and abs(arrxyz[container[dp, j], j, 0] - arrxyz[i, j, 0]) < normalthres         # and current normal vector
-                and abs(arrxyz[container[dp, j], j, 1] - arrxyz[i, j, 1]) < normalthres         # is very close to previous
-                and abs(arrxyz[container[dp, j], j, 2] - arrxyz[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
+                and arrxyz_diff[i, j] < normalthres
+                
+                # This is too slow
+                # arrraw[dp, j] > 0                                       # Only does this skip if arrraw is already larger than 0
+                # and i + 1 < imageheight
+                # and abs(arrxyz[container[dp, j], j, 0] - arrxyz[i, j, 0]) < normalthres         # and current normal vector
+                # and abs(arrxyz[container[dp, j], j, 1] - arrxyz[i, j, 1]) < normalthres         # is very close to previous
+                # and abs(arrxyz[container[dp, j], j, 2] - arrxyz[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
             ):
                 # container=i
                 continue
 
-            ## maximum integration: 3 times #?
-            if count[dp, j] < 2:
+            ## maximum integration: 3 times #?      
+            # if count[dp, j] < 10:                                     # No maximum integration
+            if True:
                 # This is unreliable for different angles
                 # if i==container[dp,j]+1 or i==container[dp,j]+2:
                 #    continue
@@ -348,7 +355,15 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
                 
                 count[dp, j] = count[dp, j] + 1
                 container[dp, j] = int(i)
+
+            if dp != current_depth[j]:
+                current_depth[j] = dp
             # print(arrrgb[container[dp, j], j, 0])
+    
+    # prob = 0.01
+    # rnd = np.random.rand(length, scaledimagewidth)
+    # arrraw[rnd < prob] = np.min(arrraw)
+    # arrraw[rnd > 1 - prob] = np.max(arrraw)
 
     hit = np.zeros((length, scaledimagewidth))
 
@@ -357,7 +372,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
             hit[i, j] = count[i, j]
             if hit[i, j] > 2:
                 hit[i, j] = 2
-                print("wtf")
+                # print("wtf")
             # if count[i,j]>1:
             # arrraw[i,j]=arrraw[i,j]/1    #count[i,j]
             # arrraw[i,j]=1+1/(1+np.exp(-(arrraw[i,j])*para-0.5)*10)
