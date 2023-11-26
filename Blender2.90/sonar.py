@@ -34,10 +34,17 @@ resolution = 0.003                              # Range resolution
 imagewidth = 0                                  # Blender camera, width (set below)
 imageheight = 0                                 # Blender camera, height (set below)
 focal_length = 0                                # Blender camera, focal length (set below)
-scale = 1  # 10                                 # Only downscaling (number of beams)
-scaledimagewidth = int(imagewidth / scale)
+horizontal_fov = 0                              # Blender camera, horizontal FOV (degs) (set below)
+vertical_fov = 0                                # Blender camera, vertical FOV (degs) (set below)
+
+scale = 10                                      # Downscaling (re: number of beams)
 normalthres = 0.02
-max_integration = 3
+# max_integration = 3
+
+# Set whether to produce hit, ele and fan-shaped images
+HIT = False
+ELE = False
+FAN = True
 
 #######################################################################################
 # count time start
@@ -290,14 +297,8 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     ##################################################################################
     # resize image will lead to some sample problem, for high resolution image, this part is not needed
     # this part is difficult, to be improved
-    print("resize image")
-    rawd0 = np.zeros((imageheight, imagewidth))
-    rawc0 = np.zeros((imageheight, imagewidth))
-    for i in range(imageheight):
-        for j in range(scaledimagewidth):
-            j0 = j * scale
-            rawd0[i, j] = arrd[i, j0]
-            rawc0[i, j] = arrc[i, j0]
+    rawc0 = arrc
+    rawd0 = arrd
 
     #########################################################################################
     # cv.imshow("depth",rawd0/np.max(rawd0))
@@ -309,153 +310,144 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     length = int(np.floor((uplimit - lowlimit) / resolution))
     print(length)
 
-    arrraw = np.zeros((length, scaledimagewidth))
-    ele = np.zeros((length, scaledimagewidth))
+    arrraw = np.zeros((length, imagewidth))
+    ele = np.zeros((length, imagewidth))
 
-    count = np.zeros((length, scaledimagewidth), dtype=np.int32)
-    container = np.zeros((length, scaledimagewidth), dtype=np.int32)
+    count = np.zeros((length, imagewidth), dtype=np.int32)
+    # container = np.zeros((length, imagewidth), dtype=np.int32)
+    
+    # Conversion from measured depth to depth pixel (dp) on sonar image
     depth_pixels = np.floor((rawd0 - lowlimit) / resolution).astype(int)
     depth_pixels_diff = np.diff(depth_pixels, axis=0, prepend=0)
-    current_depth = np.zeros(scaledimagewidth, dtype=np.int32)
-
+    current_depth = np.zeros(imagewidth, dtype=np.int32)
 
     # Loop through colors + depth + normal images
     mask = np.argwhere(
-        (depth_pixels > 0) & (depth_pixels < length) &
-        ((depth_pixels_diff != 0) | (arrxyz_diff > normalthres))
+        (depth_pixels > 0) & (depth_pixels < length) &              # Check if within sonar range
+        ((depth_pixels_diff != 0) | (arrxyz_diff > normalthres))    # Check if wasn't the same surface (previous dp not the same) or same but normal changed
     )
-    # print(mask)
     for i in mask:
-        # print(i[1])
         arrraw[depth_pixels[tuple(i)], i[1]] += rawc0[tuple(i)]
 
-    # for j in range(scaledimagewidth):               # Vertical slices
-    #     for i in range(imageheight):                # Range slices
+    if ELE or HIT:
+        for j in range(imagewidth):               # Vertical slices
+            for i in range(imageheight):                # Horizontal slices
+                dp = depth_pixels[i, j]
+                if dp >= length or dp <= 0:
+                    continue
 
-    #         # Conversion from measured depth to depth pixel (dp) on sonar image
-    #         dp = int(np.floor((rawd0[i, j] - lowlimit) / resolution))
-    #         if dp >= length or dp <= 0:
-    #             continue
+                ## for the hitted points on the same arc. if the normal vector is larger than a threshold, then integrate the intensities
+                # This is so that multiple pixels on depth image don't end up contributing to the same pixel on sonar image
+                if (
+                    depth_pixels_diff[i, j] == 0                            # Implying still in neighborhood of previous point
+                    # This is unreliable for different angles
+                    # and abs(i - container[dp, j]) < 4
+                    and arrxyz_diff[i, j] < normalthres
+                    
+                    # This is too slow
+                    # arrraw[dp, j] > 0                                       # Only does this skip if arrraw is already larger than 0
+                    # and i + 1 < imageheight
+                    # and abs(arrxyz[container[dp, j], j, 0] - arrxyz[i, j, 0]) < normalthres         # and current normal vector
+                    # and abs(arrxyz[container[dp, j], j, 1] - arrxyz[i, j, 1]) < normalthres         # is very close to previous
+                    # and abs(arrxyz[container[dp, j], j, 2] - arrxyz[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
+                ):
+                    # container=i
+                    continue
 
-    #         ## for the hitted points on the same arc. if the normal vector is larger than a threshold, then integrate the intensities
-    #         # This is so that multiple pixels on depth image don't end up contributing to the same pixel on sonar image
-    #         if (
-    #             dp == current_depth[j]                               # Implying still in neighborhood of previous point
-    #             # This is unreliable for different angles
-    #             # and abs(i - container[dp, j]) < 4
-    #             and arrxyz_diff[i, j] < normalthres
-                
-    #             # This is too slow
-    #             # arrraw[dp, j] > 0                                       # Only does this skip if arrraw is already larger than 0
-    #             # and i + 1 < imageheight
-    #             # and abs(arrxyz[container[dp, j], j, 0] - arrxyz[i, j, 0]) < normalthres         # and current normal vector
-    #             # and abs(arrxyz[container[dp, j], j, 1] - arrxyz[i, j, 1]) < normalthres         # is very close to previous
-    #             # and abs(arrxyz[container[dp, j], j, 2] - arrxyz[i, j, 2]) < normalthres         # normal vector (or norm. vec. at i = 0)
-    #         ):
-    #             # container=i
-    #             continue
+                ## maximum integration: 3 times      
+                # if count[dp, j] < 10:                                     # No maximum integration
+                if True:
+                    if ELE:
+                        ele[dp, j] = i
+                    
+                    if HIT:
+                        count[dp, j] = count[dp, j] + 1
+                    # container[dp, j] = int(i)
 
-    #         ## maximum integration: 3 times #?      
-    #         # if count[dp, j] < 10:                                     # No maximum integration
-    #         if True:
-    #             # This is unreliable for different angles
-    #             # if i==container[dp,j]+1 or i==container[dp,j]+2:
-    #             #    continue
-
-    #             # arrraw[dp, j] = rawc0[i, j] + arrraw[dp, j]
-    #             ele[dp, j] = i
-                
-    #             count[dp, j] = count[dp, j] + 1
-    #             container[dp, j] = int(i)
-
-    #         if dp != current_depth[j]:
-    #             current_depth[j] = dp
+                if dp != current_depth[j]:
+                    current_depth[j] = dp
 
     # prob = 0.01
-    # rnd = np.random.rand(length, scaledimagewidth)
+    # rnd = np.random.rand(length, imagewidth)
     # arrraw[rnd < prob] = np.min(arrraw)
     # arrraw[rnd > 1 - prob] = np.max(arrraw)
 
-    hit = np.zeros((length, scaledimagewidth))
+    hit = np.zeros((length, imagewidth))
 
-    for i in range(int(length)):
-        for j in range(scaledimagewidth):
-            hit[i, j] = count[i, j]
-            if hit[i, j] > 2:
-                hit[i, j] = 2
-                # print("wtf")
-            # if count[i,j]>1:
-            # arrraw[i,j]=arrraw[i,j]/1    #count[i,j]
-            # arrraw[i,j]=1+1/(1+np.exp(-(arrraw[i,j])*para-0.5)*10)
-            # arrraw[i,j]=arrraw[i,j]/1
-            # print(arrraw[i,j])
-            # print(count[i,j])
+    if HIT:
+        for i in range(int(length)):
+            for j in range(imagewidth):
+                hit[i, j] = count[i, j]
+                if hit[i, j] > 2:
+                    hit[i, j] = 2
 
     # smoothing, fill some holes due to aliasing
     # for i in range(int(length)):
-    # for j in range(scaledimagewidth):
+    # for j in range(imagewidth):
     # if arrraw[i,j]<0.005 and i>2 and i+2 < int(length):
     # xm = 1
     # arrraw[i,j]=(arrraw[i-2,j]+arrraw[i-1,j]+arrraw[i+1,j]+arrraw[i+2,j])/4
     # hit[i,j]=(hit[i-2,j]+hit[i-1,j]+hit[i+1,j]+hit[i+2,j])/4.0
     # arrraw[i,j]=arrraw[i,j]
     # ========================================================
-    # To generate fan-shaped image
-    width = int(uplimit / resolution * np.sin(32 / 180 * math.pi)) #?
-    print("width=", width)
-    length2 = int(uplimit / resolution)
-    print("length2=", length2)
-    # sample_interval=7.5/0.003*0.25/180*pi
-    # width=int(width/sample_interval)
-    # print('width=',width)
-    raw2fan0 = np.zeros((length2, width))
-    # raw2fan0=arrraw/np.amax(arrraw)
-    for i in range(length2):
-        for j in range(width):
-            root_squared = math.sqrt(i * i + j * j)
-            idx = int(root_squared - lowlimit / resolution)
-            if idx > 0:
-                azi = int(
-                    scaledimagewidth * 180 / 32 / math.pi * math.acos(i / root_squared)
-                )
-                if idx > length - 1 or azi > scaledimagewidth - 1:
-                    continue
-                raw2fan0[i, j] = arrraw[idx, azi]
-
-    # cv.imshow('fana',raw2fan0/np.amax(raw2fan0))
-    # save fanshaped image
-    # cv.imwrite('C:\\Users\\wang\\AppData\\Roaming\\Blender Foundation\\Blender\\2.80\\config\\BlenderPython\\result\\fan99.jpg', raw2fan0/np.amax(arrraw)*255)
-    #######################################################
-    # rotate fanshaped image
-
-    width2 = int(length2 * math.cos(74 / 180 * math.pi) * 2) #?
-    offset = int(length2 - length2 * math.sin(74 / 180 * math.pi))
+    length2 = int(math.ceil(uplimit / resolution))
+    half_hfov_rad = horizontal_fov / 2 / 180 * math.pi
+    width2 = int(math.ceil(length2 * math.sin(half_hfov_rad)) * 2)
+    offset = int(math.ceil(length2 - length2 * math.cos(half_hfov_rad)))
     length3 = int(length2 + offset)
-    xcenter = 0
-    ycenter = int(length2)
-    degrees = 16 #?
     fan = np.zeros((length3, width2))
-    for i in range(length3):
-        for j in range(width2):
-            px = int(
-                (j - xcenter) * math.cos(degrees / 180 * math.pi)
-                + (i - ycenter) * math.sin(degrees / 180 * math.pi)
-                + xcenter
-            )
-            py = int(
-                -(j - xcenter) * math.sin(degrees / 180 * math.pi)
-                + (i - ycenter) * math.cos(degrees / 180 * math.pi)
-                + ycenter
-            )
-            if px < 0 or px > width - 1 or py > length2 - 1 or py < 0:
-                continue
-            if i - offset > 0:
-                fan[i - offset, j] = raw2fan0[py, px]
+    if FAN:
+        # To generate fan-shaped image
+        width = int(uplimit / resolution * np.sin(half_hfov_rad) * 2)
+        
+        print("width=", width)
+        print("length2=", length2)
+        # sample_interval=7.5/0.003*0.25/180*pi
+        # width=int(width/sample_interval)
+        # print('width=',width)
+        raw2fan0 = np.zeros((length2, width))
+        # raw2fan0=arrraw/np.amax(arrraw)
+        for i in range(length2):
+            for j in range(width):
+                root_squared = math.sqrt(i * i + j * j)
+                idx = int(root_squared - lowlimit / resolution)
+                if idx > 0:
+                    azi = int(
+                        imagewidth * 180 / 32 / math.pi * math.acos(i / root_squared)
+                    )
+                    if idx > length - 1 or azi > imagewidth - 1:
+                        continue
+                    raw2fan0[i, j] = arrraw[idx, azi]
 
-    # delete white edge
-    fan = fan[0 : length2 - 1, :]
-    fan = cv.flip(fan, 0)
-    fan = cv.flip(fan, 1)
+        # cv.imshow('fana',raw2fan0/np.amax(raw2fan0))
+        # save fanshaped image
+        # cv.imwrite('C:\\Users\\wang\\AppData\\Roaming\\Blender Foundation\\Blender\\2.80\\config\\BlenderPython\\result\\fan99.jpg', raw2fan0/np.amax(arrraw)*255)
+        #######################################################
+        # rotate fanshaped image
+
+        xcenter = 0
+        ycenter = int(length2)
+        for i in range(length3):
+            for j in range(width2):
+                px = int(
+                    (j - xcenter) * math.cos(half_hfov_rad)
+                    + (i - ycenter) * math.sin(half_hfov_rad)
+                    + xcenter
+                )
+                py = int(
+                    -(j - xcenter) * math.sin(half_hfov_rad)
+                    + (i - ycenter) * math.cos(half_hfov_rad)
+                    + ycenter
+                )
+                if px < 0 or px > width - 1 or py > length2 - 1 or py < 0:
+                    continue
+                if i - offset > 0:
+                    fan[i - offset, j] = raw2fan0[py, px]
+
+        # delete white edge
+        fan = fan[0 : length2 - 1, :]
+        fan = cv.flip(fan, 0)
+        fan = cv.flip(fan, 1)
 
     #################################################################################################################################
     # raw image
@@ -473,7 +465,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     raw = arrraw / 1.0 * 255
     rescale_raw = cv.resize(
         raw,
-        dsize=(int(scaledimagewidth / 10), int(length)),
+        dsize=(int(imagewidth / scale), int(length)),
         interpolation=cv.INTER_CUBIC,
     )
     cv.imwrite(savePath, raw)  # np.amax(arrraw)  0.5 #0.7
@@ -481,27 +473,30 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     # print(np.amax(arrraw))
     # print(np.amax(hit))
 
-    cv.imwrite(savePath2, fan / 1.0 * 255)  # 0.7
+    if FAN:
+        cv.imwrite(savePath2, fan / 1.0 * 255)  # 0.7
 
     # Hits
-    hit_raw = hit / 2 * 255
-    hit_rescale_raw = cv.resize(
-        hit_raw,
-        dsize=(int(scaledimagewidth / 10), int(length)),
-        interpolation=cv.INTER_CUBIC,
-    )
-    cv.imwrite(savePath3, hit_raw)
-    cv.imwrite(savePath4, hit_rescale_raw)
+    if HIT:
+        hit_raw = hit / 2 * 255
+        hit_rescale_raw = cv.resize(
+            hit_raw,
+            dsize=(int(imagewidth / scale), int(length)),
+            interpolation=cv.INTER_CUBIC,
+        )
+        cv.imwrite(savePath3, hit_raw)
+        cv.imwrite(savePath4, hit_rescale_raw)
 
     # Elevation
-    ele_raw = ele / 560 * 255 #?
-    ele_rescale_raw = cv.resize(
-        ele_raw,
-        dsize=(int(scaledimagewidth / 10), int(length)),
-        interpolation=cv.INTER_CUBIC,
-    )
-    cv.imwrite(savePath5, ele_raw)
-    cv.imwrite(savePath6, ele_rescale_raw)
+    if ELE:
+        ele_raw = ele / 560 * 255 #?
+        ele_rescale_raw = cv.resize(
+            ele_raw,
+            dsize=(int(imagewidth / scale), int(length)),
+            interpolation=cv.INTER_CUBIC,
+        )
+        cv.imwrite(savePath5, ele_raw)
+        cv.imwrite(savePath6, ele_rescale_raw)
 
     return [arrraw, hit / 2, ele / 560, fan]
 
@@ -585,7 +580,8 @@ for i in range(1):  # loop for generating images
     imagewidth = int(K[0][2] * 2)
     imageheight = int(K[1][2] * 2)
     focal_length = K[0][0]
-    scaledimagewidth = int(imagewidth * 1.0 / scale)
+    horizontal_fov = math.atan2(K[0][2], K[0][0]) * 180 / math.pi * 2
+    vertical_fov = math.atan2(K[1][2], K[0][0]) * 180 / math.pi * 2
 
     bpy.context.scene.camera = bpy.context.scene.objects["Camera"]
     sceneRender()
