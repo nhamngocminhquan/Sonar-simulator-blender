@@ -382,6 +382,12 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
                 if hit[i, j] > 2:
                     hit[i, j] = 2
 
+    # ========================================================
+    # Flip image
+    arrraw = np.flip(arrraw, axis=1)
+    ele = np.flip(ele, axis=1)
+    hit = np.flip(hit, axis=1)
+
     # smoothing, fill some holes due to aliasing
     # for i in range(int(length)):
     # for j in range(imagewidth):
