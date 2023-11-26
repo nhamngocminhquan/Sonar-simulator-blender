@@ -326,6 +326,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
         (depth_pixels > 0) & (depth_pixels < length) &              # Check if within sonar range
         ((depth_pixels_diff != 0) | (arrxyz_diff > normalthres))    # Check if wasn't the same surface (previous dp not the same) or same but normal changed
     )
+    # Add up all intensities at same depth
     for i in mask:
         arrraw[depth_pixels[tuple(i)], i[1]] += rawc0[tuple(i)]
 
@@ -392,62 +393,88 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     # ========================================================
     length2 = int(math.ceil(uplimit / resolution))
     half_hfov_rad = horizontal_fov / 2 / 180 * math.pi
-    width2 = int(math.ceil(length2 * math.sin(half_hfov_rad)) * 2)
+    width = int(math.ceil(uplimit / resolution * np.sin(half_hfov_rad))) * 2
     offset = int(math.ceil(length2 - length2 * math.cos(half_hfov_rad)))
     length3 = int(length2 + offset)
-    fan = np.zeros((length3, width2))
+    fan = np.zeros((length3, width))
     if FAN:
         # To generate fan-shaped image
-        width = int(uplimit / resolution * np.sin(half_hfov_rad) * 2)
-        
-        print("width=", width)
-        print("length2=", length2)
-        # sample_interval=7.5/0.003*0.25/180*pi
-        # width=int(width/sample_interval)
-        # print('width=',width)
-        raw2fan0 = np.zeros((length2, width))
-        # raw2fan0=arrraw/np.amax(arrraw)
-        for i in range(length2):
-            for j in range(width):
-                root_squared = math.sqrt(i * i + j * j)
-                idx = int(root_squared - lowlimit / resolution)
-                if idx > 0:
-                    azi = int(
-                        imagewidth * 180 / 32 / math.pi * math.acos(i / root_squared)
-                    )
-                    if idx > length - 1 or azi > imagewidth - 1:
-                        continue
-                    raw2fan0[i, j] = arrraw[idx, azi]
+        # Precompute array
+        if not hasattr(imageGeneration, "mapper"):
+            # Cartesian coordinates centered at top center of image
+            xv, yv = np.meshgrid(
+                np.linspace(-width/2, width/2, width),
+                np.linspace(0, length2 - 1, length2))
 
-        # cv.imshow('fana',raw2fan0/np.amax(raw2fan0))
-        # save fanshaped image
-        # cv.imwrite('C:\\Users\\wang\\AppData\\Roaming\\Blender Foundation\\Blender\\2.80\\config\\BlenderPython\\result\\fan99.jpg', raw2fan0/np.amax(arrraw)*255)
-        #######################################################
-        # rotate fanshaped image
+            # Polar coordinates centered at top center of image
+            rv = np.sqrt(xv**2 + yv**2)
+            tv = np.arctan2(xv, yv)
 
-        xcenter = 0
-        ycenter = int(length2)
-        for i in range(length3):
-            for j in range(width2):
-                px = int(
-                    (j - xcenter) * math.cos(half_hfov_rad)
-                    + (i - ycenter) * math.sin(half_hfov_rad)
-                    + xcenter
-                )
-                py = int(
-                    -(j - xcenter) * math.sin(half_hfov_rad)
-                    + (i - ycenter) * math.cos(half_hfov_rad)
-                    + ycenter
-                )
-                if px < 0 or px > width - 1 or py > length2 - 1 or py < 0:
-                    continue
-                if i - offset > 0:
-                    fan[i - offset, j] = raw2fan0[py, px]
+            # Limit visible range
+            mask = (rv < uplimit / resolution) & (rv > lowlimit / resolution) & \
+                (np.abs(tv) <= horizontal_fov * math.pi / 360)
 
-        # delete white edge
-        fan = fan[0 : length2 - 1, :]
-        fan = cv.flip(fan, 0)
-        fan = cv.flip(fan, 1)
+            # Create the maps
+            imageGeneration.height_map = (rv - lowlimit / resolution) * mask
+            imageGeneration.width_map = (focal_length * np.tan(tv) + imagewidth / 2) * mask
+            imageGeneration.mapper = True
+
+        fan = cv.remap(
+            arrraw, 
+            imageGeneration.width_map.astype(np.float32),
+            imageGeneration.height_map.astype(np.float32),
+            cv.INTER_LINEAR
+        )
+        fan = np.flip(fan)
+
+        # print("width=", width)
+        # print("length2=", length2)
+        # # sample_interval=7.5/0.003*0.25/180*pi
+        # # width=int(width/sample_interval)
+        # # print('width=',width)
+        # raw2fan0 = np.zeros((length2, width))
+        # # raw2fan0=arrraw/np.amax(arrraw)
+        # for i in range(length2):
+        #     for j in range(width):
+        #         root_squared = math.sqrt(i * i + j * j)
+        #         idx = int(root_squared - lowlimit / resolution)
+        #         if idx > 0:
+        #             azi = int(
+        #                 imagewidth * 180 / 32 / math.pi * math.acos(i / root_squared)
+        #             )
+        #             if idx > length - 1 or azi > imagewidth - 1:
+        #                 continue
+        #             raw2fan0[i, j] = arrraw[idx, azi]
+
+        # # cv.imshow('fana',raw2fan0/np.amax(raw2fan0))
+        # # save fanshaped image
+        # # cv.imwrite('C:\\Users\\wang\\AppData\\Roaming\\Blender Foundation\\Blender\\2.80\\config\\BlenderPython\\result\\fan99.jpg', raw2fan0/np.amax(arrraw)*255)
+        # #######################################################
+        # # rotate fanshaped image
+
+        # xcenter = 0
+        # ycenter = int(length2)
+        # for i in range(length3):
+        #     for j in range(width):
+        #         px = int(
+        #             (j - xcenter) * math.cos(half_hfov_rad)
+        #             + (i - ycenter) * math.sin(half_hfov_rad)
+        #             + xcenter
+        #         )
+        #         py = int(
+        #             -(j - xcenter) * math.sin(half_hfov_rad)
+        #             + (i - ycenter) * math.cos(half_hfov_rad)
+        #             + ycenter
+        #         )
+        #         if px < 0 or px > width - 1 or py > length2 - 1 or py < 0:
+        #             continue
+        #         if i - offset > 0:
+        #             fan[i - offset, j] = raw2fan0[py, px]
+
+        # # delete white edge
+        # fan = fan[0 : length2 - 1, :]
+        # fan = cv.flip(fan, 0)
+        # fan = cv.flip(fan, 1)
 
     #################################################################################################################################
     # raw image
