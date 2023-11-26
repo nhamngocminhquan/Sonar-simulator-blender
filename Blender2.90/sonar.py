@@ -28,25 +28,46 @@ print(
 ###some important parameters here
 ## set the uplimit and lowlimit of the image i.e. sensing range
 # GLOBAL VARIABLES
-uplimit = 3.336                                 # Sonar range, upper limit
-lowlimit = 1.8                                  # Sonar range, lower limit
-resolution = 0.003                              # Range resolution
-imagewidth = 0                                  # Blender camera, width (set below)
-imageheight = 0                                 # Blender camera, height (set below)
-focal_length = 0                                # Blender camera, focal length (set below)
-horizontal_fov = 0                              # Blender camera, horizontal FOV (degs) (set below)
-vertical_fov = 0                                # Blender camera, vertical FOV (degs) (set below)
-
-n_beams = 256
-scale = 1                                       # Downscaling (re: number of beams)
-normalthres = 0.02
-# max_integration = 3
-
 # Set whether to produce hit, ele and fan-shaped images
 HIT = False
 ELE = False
 FAN = True
 RESCALE = False
+
+# Sonar variables
+uplimit = 3.336                                 # Sonar range, upper limit
+lowlimit = 1.8                                  # Sonar range, lower limit
+resolution = 0.003                              # Sonar range, resolution
+print((uplimit - lowlimit) / resolution)
+n_beams = 256                                   # Sonar beams
+
+# Sonar imperfections
+gs_kernel_size_b = 3                            # Gaussian blur, kernel size in beam direction
+gs_kernel_size_r = 15                           # Gaussian blur, kernel size in range direction
+gs_mean = 0                                     # Gaussian noise, mean
+gs_var = 0.03                                   # Gaussian noise, variance
+st_kernel_size = 5                              # Tangential streak, kernel (1 x size)
+st_kernel_var = 11
+x = np.linspace(
+    -math.floor(st_kernel_size / 2),
+    math.floor(st_kernel_size / 2),
+    st_kernel_size
+)
+st_kernel = np.exp(-0.5 * (x / math.sqrt(st_kernel_var)) ** 2)
+st_kernel = np.reshape(st_kernel / np.sum(st_kernel), (1, st_kernel_size))
+# st_kernel = np.ones(1)
+# st_kernel = np.ones((1, st_kernel_size), np.float32) / st_kernel_size
+print(st_kernel)
+
+# Camera variables
+imagewidth = 0                                  # Blender camera, width (set below)
+imageheight = 0                                 # Blender camera, height (set below)
+focal_length = 0                                # Blender camera, focal length (set below)
+horizontal_fov = 0                              # Blender camera, horizontal FOV (degs) (set below)
+vertical_fov = 0                                # Blender camera, vertical FOV (degs) (set below)
+scale = 1                                       # Downscaling (re: number of beams)
+normalthres = 0.02
+# max_integration = 3
 
 #######################################################################################
 # count time start
@@ -370,11 +391,6 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
                 if dp != current_depth[j]:
                     current_depth[j] = dp
 
-    # prob = 0.01
-    # rnd = np.random.rand(length, imagewidth)
-    # arrraw[rnd < prob] = np.min(arrraw)
-    # arrraw[rnd > 1 - prob] = np.max(arrraw)
-
     hit = np.zeros((length, imagewidth))
 
     if HIT:
@@ -423,6 +439,16 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
             cv.INTER_LANCZOS4
         ), axis=1)
 
+    # ==========================================================
+    # Add sonar imperfections
+    arrraw = cv.GaussianBlur(arrraw, (gs_kernel_size_b, gs_kernel_size_r), 0)
+    print(str(np.min(arrraw)) + ", " + str(np.max(arrraw)))
+    arrraw += np.random.normal(gs_mean, gs_var ** 0.5, (arrraw.shape[0], arrraw.shape[1]))
+    print(str(np.min(arrraw)) + ", " + str(np.max(arrraw)))
+    arrraw = cv.filter2D(arrraw, -1, st_kernel)
+    print(str(np.min(arrraw)) + ", " + str(np.max(arrraw)))
+    cv.imwrite('testkernel.png', arrraw * 255)
+
     # ========================================================
     # smoothing, fill some holes due to aliasing
     # for i in range(int(length)):
@@ -459,6 +485,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
             # Create the maps
             imageGeneration.fan_height_map = ((rv - lowlimit / resolution) * mask).astype(np.float32)
             imageGeneration.fan_width_map = ((tv / (horizontal_fov * math.pi / 180) + 0.5) * n_beams * mask).astype(np.float32)
+            imageGeneration.fan_mask = mask
             imageGeneration.fan_map = True
 
         fan = np.flip(cv.remap(
@@ -466,7 +493,7 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
             imageGeneration.fan_width_map,
             imageGeneration.fan_height_map,
             cv.INTER_LANCZOS4
-        ))
+        ) * imageGeneration.fan_mask)
 
         # print("width=", width)
         # print("length2=", length2)
@@ -521,13 +548,14 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     # raw image
     # cv.imshow('rawsonar',arrraw/np.amax(arrraw))
     # save raw and resized sonar images
-    savePath = os.path.join(save_directory, "rawimg_" + str(num + 1) + "_" + str(k) + ".png")           # Sonar image
-    savePath1 = os.path.join(save_directory, "resizeimg_" + str(num + 1) + "_" + str(k) + ".png")       # Sonar image, resized
-    savePath2 = os.path.join(save_directory, "fanshaped_" + str(num + 1) + "_" + str(k) + ".png")       # Sonar image, fan-shaped
-    savePath3 = os.path.join(save_directory, "hit" + str(num + 1) + ".jpg")                             # Hits (if rays hit objects)
-    savePath4 = os.path.join(save_directory, "hit_resize" + str(num + 1) + ".jpg")                      # Hits, resized
-    savePath5 = os.path.join(save_directory, "ele_" + str(num + 1) + "_" + str(k) + ".png")             # Elevation (probably for ML dataset generation)
-    savePath6 = os.path.join(save_directory, "ele_resize_" + str(num + 1) + "_" + str(k) + ".png")      # Elevation, resized
+    common_id = str(num + 1).zfill(4) + ".png"
+    savePath = os.path.join(save_directory, "rawimg_" + common_id)                          # Sonar image
+    savePath1 = os.path.join(save_directory, "resizeimg_" + common_id)                      # Sonar image, resized
+    savePath2 = os.path.join(save_directory, "fanshaped_" + common_id)                      # Sonar image, fan-shaped
+    savePath3 = os.path.join(save_directory, "hit" + common_id)                             # Hits (if rays hit objects)
+    savePath4 = os.path.join(save_directory, "hit_resize" + common_id)                      # Hits, resized
+    savePath5 = os.path.join(save_directory, "ele_" + common_id)                            # Elevation (probably for ML dataset generation)
+    savePath6 = os.path.join(save_directory, "ele_resize_" + common_id)                     # Elevation, resized
 
     # Sonar
     raw = arrraw / 1.0 * 255
