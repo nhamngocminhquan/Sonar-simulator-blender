@@ -37,7 +37,8 @@ focal_length = 0                                # Blender camera, focal length (
 horizontal_fov = 0                              # Blender camera, horizontal FOV (degs) (set below)
 vertical_fov = 0                                # Blender camera, vertical FOV (degs) (set below)
 
-scale = 10                                      # Downscaling (re: number of beams)
+n_beams = 256
+scale = 1                                       # Downscaling (re: number of beams)
 normalthres = 0.02
 # max_integration = 3
 
@@ -45,6 +46,7 @@ normalthres = 0.02
 HIT = False
 ELE = False
 FAN = True
+RESCALE = False
 
 #######################################################################################
 # count time start
@@ -382,12 +384,46 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
                 if hit[i, j] > 2:
                     hit[i, j] = 2
 
-    # ========================================================
-    # Flip image
-    arrraw = np.flip(arrraw, axis=1)
-    ele = np.flip(ele, axis=1)
-    hit = np.flip(hit, axis=1)
+    # ==========================================================
+    # Create sonar-accurate image (width: beams, height: depths)
+    # Precompute map
+    if not hasattr(imageGeneration, "beam_map"):
+        # Polar coordinates centered at top left of image (beam 0 at FOV edge)
+        tv, rv = np.meshgrid(
+            np.linspace(-n_beams/2, n_beams/2 - 1, n_beams),
+            np.linspace(0, length - 1, length)
+        )
 
+        # Create the maps
+        imageGeneration.beam_height_map = (rv).astype(np.float32)
+        imageGeneration.beam_width_map = (
+            focal_length * np.tan(tv / n_beams * horizontal_fov * math.pi / 180) + imagewidth / 2
+        ).astype(np.float32)
+        imageGeneration.beam_map = True
+
+    # Remap & flip image
+    arrraw = np.flip(cv.remap(
+        arrraw,
+        imageGeneration.beam_width_map,
+        imageGeneration.beam_height_map,
+        cv.INTER_LANCZOS4
+    ), axis=1)
+    if ELE:
+        np.flip(ele = cv.remap(
+            ele,
+            imageGeneration.beam_width_map,
+            imageGeneration.beam_height_map,
+            cv.INTER_LANCZOS4
+        ), axis=1)
+    if HIT:
+        np.flip(hit = cv.remap(
+            hit,
+            imageGeneration.beam_width_map,
+            imageGeneration.beam_height_map,
+            cv.INTER_LANCZOS4
+        ), axis=1)
+
+    # ========================================================
     # smoothing, fill some holes due to aliasing
     # for i in range(int(length)):
     # for j in range(imagewidth):
@@ -406,12 +442,12 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     if FAN:
         # To generate fan-shaped image
         # Precompute array
-        if not hasattr(imageGeneration, "mapper"):
+        if not hasattr(imageGeneration, "fan_map"):
             # Cartesian coordinates centered at top center of image
             xv, yv = np.meshgrid(
-                np.linspace(-width/2, width/2, width),
-                np.linspace(0, length2 - 1, length2))
-
+                np.linspace(-width/2, width/2 - 1, width),
+                np.linspace(0, length2 - 1, length2)
+            )
             # Polar coordinates centered at top center of image
             rv = np.sqrt(xv**2 + yv**2)
             tv = np.arctan2(xv, yv)
@@ -421,17 +457,16 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
                 (np.abs(tv) <= horizontal_fov * math.pi / 360)
 
             # Create the maps
-            imageGeneration.height_map = (rv - lowlimit / resolution) * mask
-            imageGeneration.width_map = (focal_length * np.tan(tv) + imagewidth / 2) * mask
-            imageGeneration.mapper = True
+            imageGeneration.fan_height_map = ((rv - lowlimit / resolution) * mask).astype(np.float32)
+            imageGeneration.fan_width_map = ((tv / (horizontal_fov * math.pi / 180) + 0.5) * n_beams * mask).astype(np.float32)
+            imageGeneration.fan_map = True
 
-        fan = cv.remap(
+        fan = np.flip(cv.remap(
             arrraw, 
-            imageGeneration.width_map.astype(np.float32),
-            imageGeneration.height_map.astype(np.float32),
-            cv.INTER_LINEAR
-        )
-        fan = np.flip(fan)
+            imageGeneration.fan_width_map,
+            imageGeneration.fan_height_map,
+            cv.INTER_LANCZOS4
+        ))
 
         # print("width=", width)
         # print("length2=", length2)
@@ -496,13 +531,14 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
 
     # Sonar
     raw = arrraw / 1.0 * 255
-    rescale_raw = cv.resize(
-        raw,
-        dsize=(int(imagewidth / scale), int(length)),
-        interpolation=cv.INTER_CUBIC,
-    )
     cv.imwrite(savePath, raw)  # np.amax(arrraw)  0.5 #0.7
-    cv.imwrite(savePath1, rescale_raw)
+    if RESCALE:
+        rescale_raw = cv.resize(
+            raw,
+            dsize=(int(imagewidth / scale), int(length)),
+            interpolation=cv.INTER_CUBIC,
+        )
+        cv.imwrite(savePath1, rescale_raw)
     # print(np.amax(arrraw))
     # print(np.amax(hit))
 
@@ -512,24 +548,26 @@ def imageGeneration(num, k):  # num:number of iteration -> number of image
     # Hits
     if HIT:
         hit_raw = hit / 2 * 255
-        hit_rescale_raw = cv.resize(
-            hit_raw,
-            dsize=(int(imagewidth / scale), int(length)),
-            interpolation=cv.INTER_CUBIC,
-        )
         cv.imwrite(savePath3, hit_raw)
-        cv.imwrite(savePath4, hit_rescale_raw)
+        if RESCALE:
+            hit_rescale_raw = cv.resize(
+                hit_raw,
+                dsize=(int(imagewidth / scale), int(length)),
+                interpolation=cv.INTER_CUBIC,
+            )
+            cv.imwrite(savePath4, hit_rescale_raw)
 
     # Elevation
     if ELE:
         ele_raw = ele / 560 * 255 #?
-        ele_rescale_raw = cv.resize(
-            ele_raw,
-            dsize=(int(imagewidth / scale), int(length)),
-            interpolation=cv.INTER_CUBIC,
-        )
         cv.imwrite(savePath5, ele_raw)
-        cv.imwrite(savePath6, ele_rescale_raw)
+        if RESCALE:
+            ele_rescale_raw = cv.resize(
+                ele_raw,
+                dsize=(int(imagewidth / scale), int(length)),
+                interpolation=cv.INTER_CUBIC,
+            )
+            cv.imwrite(savePath6, ele_rescale_raw)
 
     return [arrraw, hit / 2, ele / 560, fan]
 
@@ -609,7 +647,6 @@ for i in range(1):  # loop for generating images
     # generate sonar image according to current camera perspective
     cam = bpy.data.objects["Camera"]
     K = get_calibration_matrix_K_from_blender(cam.data)
-    print(K)
     imagewidth = int(K[0][2] * 2)
     imageheight = int(K[1][2] * 2)
     focal_length = K[0][0]
